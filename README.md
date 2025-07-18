@@ -24,6 +24,15 @@ conda env create -n multidelete -f environment.yml
 conda activate multidelete
 ```
 
+## Datasets
+
+Create a `data` folder and copy the necessary data on it. E.g. images from COCO must be placed in:
+```
+data/lavis_cache/coco/images/train2014
+data/lavis_cache/coco/images/val2014
+```
+
+
 ## How to run
 
 1. Step 1. Train original model
