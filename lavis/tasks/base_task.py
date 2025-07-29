@@ -47,6 +47,7 @@ class BaseTask:
         datasets = dict()
 
         datasets_config = cfg.datasets_cfg
+        print(datasets_config)
 
         assert len(datasets_config) > 0, "At least one dataset has to be specified."
 
@@ -216,6 +217,10 @@ class BaseTask:
                 break
 
             samples = next(data_loader)
+            print('iter',i)
+            print('num samples', len(samples['image']))
+            #if i == 952:
+            #    break
 
             samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
             samples.update(

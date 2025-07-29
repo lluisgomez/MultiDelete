@@ -34,38 +34,46 @@ class VLUnlearnRetrievalTask(RetrievalTask):
         caption = samples["text_input"]
         idx = samples["image_id"]
         
-        image_embeds = model.visual_encoder.forward_features(image)
+        #image_embeds = model.visual_encoder.forward_features(image)
+        image_embeds = model.encode_image(image)
         image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long, device=image_embeds.device)
-        image_feat = F.normalize(model.vision_proj(image_embeds[:, 0, :]), dim=-1)
+        #image_feat = F.normalize(model.vision_proj(image_embeds[:, 0, :]), dim=-1)
+        image_feat = F.normalize(image_embeds, dim=-1)
 
-        text = model.tokenizer(
-            caption,
-            padding="max_length",
-            truncation=True,
-            max_length=model.max_txt_len,
-            return_tensors="pt",
-        ).to(image_embeds.device)
 
-        text_output = model.text_encoder.forward_text(text)
+        #text = model.tokenizer(
+        #    caption,
+        #    padding="max_length",
+        #    truncation=True,
+        #    max_length=model.max_txt_len,
+        #    return_tensors="pt",
+        #).to(image_embeds.device)
+        text = model.tokenizer(caption).to(image_embeds.device)
 
-        text_embeds = text_output.last_hidden_state
-        text_feat = F.normalize(model.text_proj(text_embeds[:, 0, :]), dim=-1)
+        #text_output = model.text_encoder.forward_text(text)
+        #text_embeds = text_output.last_hidden_state
+        text_embeds = model.encode_text(text)
+        #text_feat = F.normalize(model.text_proj(text_embeds[:, 0, :]), dim=-1)
+        text_feat = F.normalize(text_embeds, dim=-1)
 
         sim_i2t = image_feat @ text_feat.t()
         sim_t2i = text_feat @ image_feat.t()
 
-        encoder_output = model.text_encoder(
-            encoder_embeds=text_embeds,
-            attention_mask=text.attention_mask,
-            encoder_hidden_states=image_embeds,
-            encoder_attention_mask=image_atts,
-            return_dict=True,
-            mode="fusion",
-        )
 
-        return {'encoder_output': encoder_output.last_hidden_state[:, 0, :], 'image_embeds': image_feat, 'text_embeds': text_feat, 'sim_i2t': sim_i2t, 'sim_t2i': sim_t2i}
+        #encoder_output = model.text_encoder(
+        #    encoder_embeds=text_embeds,
+        #    attention_mask=text.attention_mask,
+        #    encoder_hidden_states=image_embeds,
+        #    encoder_attention_mask=image_atts,
+        #    return_dict=True,
+        #    mode="fusion",
+        #)
+
+        #return {'encoder_output': encoder_output.last_hidden_state[:, 0, :], 'image_embeds': image_feat, 'text_embeds': text_feat, 'sim_i2t': sim_i2t, 'sim_t2i': sim_t2i}
+        return {'encoder_output': F.normalize((image_feat + text_feat) / 2, dim=-1), 'image_embeds': image_feat, 'text_embeds': text_feat, 'sim_i2t': sim_i2t, 'sim_t2i': sim_t2i}
 
     def train_step(self, args, cfg, model_ori, model_unlearn, samples_df, samples_dr, ori_embed=None):
+        model_unlearn.train()
         
         # print('batch size', len(samples_df['text_input']), len(samples_dr['text_input']))
 
@@ -85,7 +93,7 @@ class VLUnlearnRetrievalTask(RetrievalTask):
         dis_func = nn.MSELoss()
 
         # Modality decoupling
-        if 'md' in args.unlearn_method:
+        if True:#'md' in args.unlearn_method:
             sim_i2t_ran = output_ori_random['sim_i2t']
             sim_t2i_ran = output_ori_random['sim_t2i']
 
@@ -95,32 +103,35 @@ class VLUnlearnRetrievalTask(RetrievalTask):
             loss_md = dis_func(sim_i2t_ran, sim_i2t_df) + dis_func(sim_t2i_ran, sim_t2i_df)
 
         else:
-            loss_md = torch.tensor(0)
+            loss_md = torch.tensor(0.0, device=model_unlearn.device, requires_grad=True)
+
 
         # Multimodal representation
-        if 'multi' in args.unlearn_method:
+        if True:#'multi' in args.unlearn_method:
             multi_embeds_ori = output_ori_dr['encoder_output']
             multi_embeds = output_unlearn_dr['encoder_output']
 
             loss_multi = dis_func(multi_embeds_ori, multi_embeds)
 
         else:
-            loss_multi = torch.tensor(0)
+            loss_multi = torch.tensor(0.0, device=model_unlearn.device, requires_grad=True)
+
 
         # Unimodal representation
-        if 'uni' in args.unlearn_method:
+        if True:#'uni' in args.unlearn_method:
             hidden_size = output_ori_dr['image_embeds'].shape[-1]
 
-            image_embeds_ori = output_ori['image_embeds']
-            text_embeds_ori = output_ori['text_embeds']
+            image_embeds_ori = output_ori_dr['image_embeds']
+            text_embeds_ori = output_ori_dr['text_embeds']
 
-            image_embeds_unlearn = output_unlearn['image_embeds']
-            text_embeds_unlearn = output_unlearn['text_embeds']
+            image_embeds_unlearn = output_unlearn_dr['image_embeds']
+            text_embeds_unlearn = output_unlearn_dr['text_embeds']
 
             loss_uni = dis_func(image_embeds_ori, image_embeds_unlearn) + dis_func(text_embeds_ori, text_embeds_unlearn)
 
         else:
-            loss_uni = torch.tensor(0)
+            loss_uni = torch.tensor(0.0, device=model_unlearn.device, requires_grad=True)
+
 
 
         loss = loss_md + loss_multi + loss_uni
@@ -130,7 +141,7 @@ class VLUnlearnRetrievalTask(RetrievalTask):
             'train_loss_multi': loss_multi, 
             'train_loss_uni': loss_uni
         }
-        wandb.log({'train_loss': loss.item(), 'train_loss_md': loss_md.item(), 'train_loss_multi': loss_multi.item(), 'train_loss_uni': loss_uni.item()})
+        #wandb.log({'train_loss': loss.item(), 'train_loss_md': loss_md.item(), 'train_loss_multi': loss_multi.item(), 'train_loss_uni': loss_uni.item()})
         # logging.info({'train_loss': loss.item(), 'train_loss_md': loss_md.item(), 'train_loss_multi': loss_multi.item(), 'train_loss_uni': loss_uni.item()})
 
         return out
@@ -240,7 +251,8 @@ class VLUnlearnClassificationTask(MultimodalClassificationTask,BaseTask):
 
             loss_md = dis_func(encoder_out_ran, encoder_out_df)
         else:
-            loss_md = torch.tensor(0)
+            loss_md = torch.tensor(0.0, device=model_unlearn.device, requires_grad=True)
+
 
         # Multimodal representation
         # On Dr, f'(I, T) ~ f(I, T)
@@ -251,7 +263,8 @@ class VLUnlearnClassificationTask(MultimodalClassificationTask,BaseTask):
             loss_multi = dis_func(multi_embeds_ori, multi_embeds)
 
         else:
-            loss_multi = torch.tensor(0)
+            loss_multi = torch.tensor(0.0, device=model_unlearn.device, requires_grad=True)
+
 
         # Unimodal representation
         # On Df, f'(I), f'(T) ~ f(I), f(T)
@@ -270,7 +283,8 @@ class VLUnlearnClassificationTask(MultimodalClassificationTask,BaseTask):
             loss_uni = dis_func(image_embeds_ori, image_embeds)
 
         else:
-            loss_uni = torch.tensor(0)
+            loss_uni = torch.tensor(0.0, device=model_unlearn.device, requires_grad=True)
+
 
 
         loss = loss_md + loss_multi + loss_uni
@@ -283,5 +297,148 @@ class VLUnlearnClassificationTask(MultimodalClassificationTask,BaseTask):
         }
         wandb.log({'train_loss': loss.item(), 'train_loss_md': loss_md.item(), 'train_loss_multi': loss_multi.item(), 'train_loss_uni': loss_uni.item()})
         # logging.info({'train_loss': loss.item(), 'train_loss_md': loss_md.item(), 'train_loss_multi': loss_multi.item(), 'train_loss_uni': loss_uni.item()})
+
+        return out
+
+
+####################################################################
+###################################################################
+
+class DeleteRetrievalTask(RetrievalTask):
+    def get_embed(self, model, samples):
+        image = samples["image"]
+        caption = samples["text_input"]
+        idx = samples["image_id"]
+        
+        image_embeds = model.encode_image(image)
+        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long, device=image_embeds.device)
+        image_feat = F.normalize(image_embeds, dim=-1)
+
+        text = model.tokenizer(caption).to(image_embeds.device)
+
+        text_embeds = model.encode_text(text)
+        text_feat = F.normalize(text_embeds, dim=-1)
+
+        sim_i2t = image_feat @ text_feat.t()
+        sim_t2i = text_feat @ image_feat.t()
+
+
+        return {'image_embeds': image_feat, 'text_embeds': text_feat, 'sim_i2t': sim_i2t, 'sim_t2i': sim_t2i}
+
+    def train_step(self, args, cfg, model_ori, model_unlearn, samples_df, samples_dr, ori_embed=None):
+        model_unlearn.train()
+        
+        output_unlearn_df = self.get_embed(model_unlearn, samples_df)
+        output_unlearn_dr = self.get_embed(model_unlearn, samples_dr)
+        
+        with torch.no_grad():
+            output_ori_dr = self.get_embed(model_ori, samples_dr)
+
+        dis_func = nn.MSELoss()
+
+        # DELETE: Forgetting loss
+        # Reduce similarity between paired image-text in the forget set
+        sim_i2t_df = output_unlearn_df['sim_i2t']
+        sim_t2i_df = output_unlearn_df['sim_t2i']
+
+        zero_target = torch.zeros_like(sim_i2t_df)
+        loss_forget = dis_func(sim_i2t_df, zero_target) + dis_func(sim_t2i_df, zero_target)
+
+        # DELETE: Retention loss
+        # Match model_unlearn’s similarity to model_ori’s similarity on retain set
+        sim_i2t_dr_ori = output_ori_dr['sim_i2t']
+        sim_t2i_dr_ori = output_ori_dr['sim_t2i']
+    
+        sim_i2t_dr = output_unlearn_dr['sim_i2t']
+        sim_t2i_dr = output_unlearn_dr['sim_t2i']
+    
+        loss_retain = dis_func(sim_i2t_dr, sim_i2t_dr_ori) + dis_func(sim_t2i_dr, sim_t2i_dr_ori)
+    
+        # Total DELETE loss: forget + retain
+        loss = loss_forget + loss_retain
+
+        out = {
+            'train_loss': loss, 
+            'train_loss_md': loss_forget, 
+            'train_loss_multi': loss_retain, 
+            'train_loss_uni': loss_retain
+        }
+
+        return out
+
+
+
+
+
+####################################################################
+###################################################################
+
+class EraseRetrievalTask(RetrievalTask):
+    def get_embed(self, model, samples):
+        image = samples["image"]
+        caption = samples["text_input"]
+        idx = samples["image_id"]
+        
+        image_embeds = model.encode_image(image)
+        image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long, device=image_embeds.device)
+        image_feat = F.normalize(image_embeds, dim=-1)
+
+        text = model.tokenizer(caption).to(image_embeds.device)
+
+        text_embeds = model.encode_text(text)
+        text_feat = F.normalize(text_embeds, dim=-1)
+
+        sim_i2t = image_feat @ text_feat.t()
+        sim_t2i = text_feat @ image_feat.t()
+
+
+        return {'image_embeds': image_feat, 'text_embeds': text_feat, 'sim_i2t': sim_i2t, 'sim_t2i': sim_t2i}
+
+    def train_step(self, args, cfg, model_ori, model_unlearn, samples_df, samples_dr, ori_embed=None):
+        model_unlearn.train()
+        
+        output_unlearn_df = self.get_embed(model_unlearn, samples_df)
+        output_unlearn_dr = self.get_embed(model_unlearn, samples_dr)
+        
+        with torch.no_grad():
+            output_ori_df = self.get_embed(model_ori, samples_df)
+            output_ori_dr = self.get_embed(model_ori, samples_dr)
+
+        dis_func = nn.MSELoss()
+
+        # CLIPErase: Forgetting loss
+        sim_i2t_df = output_unlearn_df['sim_i2t']
+        sim_t2i_df = output_unlearn_df['sim_t2i']
+
+        zero_target = torch.zeros_like(sim_i2t_df)
+        loss_forget = dis_func(sim_i2t_df, zero_target) + dis_func(sim_t2i_df, zero_target)
+
+        # CLIPErase: Retention loss (on retain set)
+        sim_i2t_dr_ori = output_ori_dr['sim_i2t']
+        sim_t2i_dr_ori = output_ori_dr['sim_t2i']
+    
+        sim_i2t_dr_unl = output_unlearn_dr['sim_i2t']
+        sim_t2i_dr_unl = output_unlearn_dr['sim_t2i']
+    
+        loss_retain = dis_func(sim_i2t_dr_unl, sim_i2t_dr_ori) + dis_func(sim_t2i_dr_unl, sim_t2i_dr_ori)
+
+        # CLIPErase: Consistency loss (unimodal retention)
+        img_emb_unl = output_unlearn_dr['image_embeds']
+        txt_emb_unl = output_unlearn_dr['text_embeds']
+    
+        img_emb_ori = output_ori_dr['image_embeds']
+        txt_emb_ori = output_ori_dr['text_embeds']
+
+        loss_consist = dis_func(img_emb_unl, img_emb_ori) + dis_func(txt_emb_unl, txt_emb_ori)
+    
+        # Total CLIPErase loss: forget + retain
+        loss = loss_forget + loss_retain + loss_consist
+
+        out = {
+            'train_loss': loss, 
+            'train_loss_md': loss_forget, 
+            'train_loss_multi': loss_retain, 
+            'train_loss_uni': loss_consist 
+        }
 
         return out

@@ -472,7 +472,7 @@ class RunnerBase:
             model=model,
             dataset=self.datasets[split_name],
         )
-        results = self.task.evaluation(model, data_loader, **{'split_name': split_name})
+        results = None #self.task.evaluation(model, data_loader, **{'split_name': split_name})
 
         if results is not None:
             return self.task.after_evaluation(
@@ -626,18 +626,18 @@ class RunnerBase:
             )
             checkpoint = torch.load(cached_file, map_location=self.device)
         elif os.path.isfile(url_or_filename):
-            checkpoint = torch.load(url_or_filename, map_location=self.device)
+            checkpoint = torch.load(url_or_filename, map_location=self.device, weights_only=False)
         else:
             raise RuntimeError("checkpoint url or path is invalid")
 
-        state_dict = checkpoint["model"]
-        self.unwrap_dist_model(self.model).load_state_dict(state_dict, strict=False)
+        #state_dict = checkpoint["model"]
+        #self.unwrap_dist_model(self.model).load_state_dict(state_dict, strict=False)
 
-        self.optimizer.load_state_dict(checkpoint["optimizer"])
-        if self.scaler and "scaler" in checkpoint:
-            self.scaler.load_state_dict(checkpoint["scaler"])
+        #self.optimizer.load_state_dict(checkpoint["optimizer"])
+        #if self.scaler and "scaler" in checkpoint:
+        #    self.scaler.load_state_dict(checkpoint["scaler"])
 
-        self.start_epoch = checkpoint["epoch"] + 1
+        #self.start_epoch = checkpoint["epoch"] + 1
         logging.info("Resume checkpoint from {}".format(url_or_filename))
 
     @main_process

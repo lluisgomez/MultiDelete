@@ -230,6 +230,7 @@ class Registry:
 
     @classmethod
     def get_builder_class(cls, name):
+        print("AAAAAAAAAAAAAAAAA",name, cls)
         return cls.mapping["builder_name_mapping"].get(name, None)
 
     @classmethod

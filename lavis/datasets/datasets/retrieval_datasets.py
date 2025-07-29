@@ -37,7 +37,7 @@ class RetrievalDataset(BaseDataset, __DisplMixin):
         self.img_ids = {}
         n = 0
         for ann in self.annotation:
-            img_id = ann["image_id"]
+            img_id = ann["image"]
             if img_id not in self.img_ids.keys():
                 self.img_ids[img_id] = n
                 n += 1
@@ -50,12 +50,12 @@ class RetrievalDataset(BaseDataset, __DisplMixin):
         image = Image.open(image_path).convert("RGB")
 
         image = self.vis_processor(image)
-        caption = self.text_processor(ann["caption"])
+        caption = self.text_processor(ann["caption"][0])
 
         return {
             "image": image,
             "text_input": caption,
-            "image_id": self.img_ids[ann["image_id"]],
+            "image_id": self.img_ids[ann["image"]],
             "instance_id": ann["instance_id"],
         }
 

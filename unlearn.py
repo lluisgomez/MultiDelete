@@ -112,6 +112,7 @@ def prepare_dr_data(dataset_train_ori, cfg, data_type):
     return dataset
 
 def prepare_df_data(dataset_train_ori, cfg, data_type):
+    print(f'Df/{data_type}/image-{cfg.run_cfg.seed}.txt')
     with open(f'Df/{data_type}/image-{cfg.run_cfg.seed}.txt', 'r') as f:
         df_ids = f.readlines()
     df_ids = [i.strip() for i in df_ids]
@@ -179,7 +180,7 @@ def prepare_df_data_for_test(dataset_train_ori, dataset_test_ori, cfg, data_type
             image.append(ann["image"])
             img2txt[img_id] = []
             for i, caption in enumerate(ann["caption"]):
-                text.append(text_processor(caption))
+                text.append(text_processor(caption[0]))
                 img2txt[img_id].append(txt_id)
                 txt2img[txt_id] = img_id
                 txt_id += 1
@@ -264,7 +265,7 @@ def prepare_dr_data_for_test(dataset_train_ori, dataset_test_ori, cfg, data_type
             image.append(ann["image"])
             img2txt[img_id] = []
             for i, caption in enumerate(ann["caption"]):
-                text.append(text_processor(caption))
+                text.append(text_processor(caption[0]))
                 img2txt[img_id].append(txt_id)
                 txt2img[txt_id] = img_id
                 txt_id += 1
@@ -351,7 +352,7 @@ def main():
     # wandb.init(project=project, group=group, name=name, config=args, id=run_id, resume='allow')
 
 
-    if 'vlul' in args.unlearn_method:
+    if ('vlul' in args.unlearn_method) or ('delete' in args.unlearn_method) or ('erase' in args.unlearn_method):
         cfg.run_cfg.distributed = False
     else:
         init_distributed_mode(cfg.run_cfg)
@@ -378,6 +379,8 @@ def main():
         data_type = 'flickr30k'
     elif 'coco' in data_name:
         data_type = 'coco'
+    elif 'salmu' in data_name:
+        data_type = 'salmu'
     elif data_name == 'nlvr':
         data_type = 'nlvr'
     elif 'snli_ve' in data_name:
@@ -394,6 +397,7 @@ def main():
     datasets[data_name]['df'] = df_for_test
     datasets[data_name]['dr'] = dr_for_test
 
+    print('Dr size:', len(dr), 'Df size:', len(df))
 
     if args.unlearn_method in ['retrain', 'ft']:
         datasets[data_name]['train'] = dr
@@ -426,8 +430,9 @@ def main():
         datasets[data_name]['train'] = df
         datasets[data_name]['dr_train'] = dr
 
-        if args.task == 'retrieval':
-            task = VLUnlearnClassificationTask.setup_task(cfg=cfg)
+        if 'retrieval' in args.task:
+            print('RETRIEVAL')
+            task = VLUnlearnRetrievalTask.setup_task(cfg=cfg)
         elif args.task == 'vqa':
             task = VLUnlearnVQATask.setup_task(cfg=cfg)
         elif args.task in ['nlvr', 've']:
@@ -439,7 +444,37 @@ def main():
         runner = runner_class(
             cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets, 
         )
-        runner.unlearn(args, cfg, model_ori)
+        runner.unlearn(args, cfg)#, model_ori)
+
+    elif 'erase' in args.unlearn_method:
+        cfg.run_cfg.batch_size_train = cfg.run_cfg.batch_size_train // 2
+        datasets[data_name]['train'] = df
+        datasets[data_name]['dr_train'] = dr
+
+        task = EraseRetrievalTask.setup_task(cfg=cfg)
+
+        runner_class = MultimodalUnlearn
+        model_ori = task.build_model(cfg)
+        model_ori.eval()
+        runner = runner_class(
+            cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets, 
+        )
+        runner.unlearn(args, cfg)#, model_ori)
+
+    elif 'delete' in args.unlearn_method:
+        cfg.run_cfg.batch_size_train = cfg.run_cfg.batch_size_train // 2
+        datasets[data_name]['train'] = df
+        datasets[data_name]['dr_train'] = dr
+
+        task = DeleteRetrievalTask.setup_task(cfg=cfg)
+
+        runner_class = MultimodalUnlearn
+        model_ori = task.build_model(cfg)
+        model_ori.eval()
+        runner = runner_class(
+            cfg=cfg, job_id=job_id, task=task, model=model, datasets=datasets, 
+        )
+        runner.unlearn(args, cfg)#, model_ori)
 
     else:
         raise NotImplementedError

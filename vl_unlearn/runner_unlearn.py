@@ -110,7 +110,7 @@ class NewRunner(RunnerBase):
         # os.system(f'ln -sT {file1} {file2}')
 
         if True: #not os.path.exists(os.path.join(self.output_dir, 'checkpoint_best.pth')) and self.config.run_cfg.unlearn_method != 'dtd':
-            if self.config.run_cfg.unlearn_method in ['ft', 'ft-F', 'neggrad', 'neggrad-F', 'dtd', 'dtd-F']:
+            if self.config.run_cfg.unlearn_method in ['dtd', 'dtd-F']:
                 epoch_iter = range(1)
             else:
                 epoch_iter = range(self.start_epoch, self.max_epoch)
@@ -128,88 +128,6 @@ class NewRunner(RunnerBase):
                     file2 = os.path.join(self.output_dir, 'checkpoint_best.pth')
                     os.system(f'ln -sfT {file1} {file2}')
 
-                # evaluation phase
-                # FT and NegGrad only trains for 1 epoch. Skip valid.
-                # and self.config.run_cfg.unlearn_method not in ['ft', 'neggrad']: 
-                if len(self.valid_splits) > 0:
-                    valid_logs = {}
-                    for split_name in self.valid_splits:
-                        logging.info("Evaluating on {}.".format(split_name))
-
-                        logs = self.eval_epoch(
-                            split_name=split_name, cur_epoch=cur_epoch
-                        )
-
-                        if split_name == 'test':
-                            if 'acc' in logs:
-                                test_logs['dt'] = logs['acc']
-                            else:
-                                test_logs['txt_r_mean'] = logs['txt_r_mean']
-                                test_logs['img_r_mean'] = logs['img_r_mean']
-
-                        if split_name == 'df':
-                            if 'txt_r_mean' in logs:
-                                image_embed_dr = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'image_embed_dr.pt'))
-                                text_embed_dr = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'text_embed_dr.pt'))
-                                image_embed_df = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'image_embed_df.pt'))
-                                text_embed_df = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'text_embed_df.pt'))
-                                dr_pred = (image_embed_dr @ text_embed_dr.t()).diagonal()
-                                df_pred = (image_embed_df @ text_embed_df.t()).diagonal()
-
-                                aucs = []
-                                for i in range(5):
-                                    s = i * df_pred.shape[0]
-                                    e = s + df_pred.shape[0]
-
-                                    y = [0] * df_pred.shape[0] + [1] * dr_pred[s:e].shape[0]
-                                    p = torch.hstack([df_pred, dr_pred[s:e]]).flatten().sigmoid().numpy()
-
-                                    a = roc_auc_score(y, p)
-                                    aucs.append(a)
-
-                            else:
-                                dr_pred = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'pred_dr.pt'))
-                                df_pred = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'pred_df.pt'))
-
-                                aucs = []
-                                for i in range(5):
-                                    s = i * df_pred.shape[0]
-                                    e = s + df_pred.shape[0]
-
-                                    y = [0] * df_pred.shape[0] + [1] * dr_pred[s:e].shape[0]
-                                    p = F.softmax(torch.vstack([df_pred, dr_pred[s:e]]), dim=1).numpy()
-
-                                    if p.shape[1] == 2:
-                                        a = roc_auc_score(y, p[:, 1])
-                                        aucs.append(a)
-                                    elif p.shape[1] == 3:
-                                        a = roc_auc_score(y, p[:, 0])
-                                        aucs.append(a)
-                                        a = roc_auc_score(y, p[:, 1])
-                                        aucs.append(a)
-                                        a = roc_auc_score(y, p[:, 2])
-                                        aucs.append(a)
-
-
-                            print('aaaaaaaaaaaaaaaaa', split_name, aucs)
-                            logs['auc'] = np.mean(aucs)
-                            valid_logs['auc'] = np.mean(aucs)
-
-                        # with open(self.output_dir / split_name, 'w') as f:
-                        #     json.dump(logs, f)
-                            
-                        valid_logs[split_name] = logs
-                        logging.info(f'{split_name}: {str(logs)}')
-                        self.log_stats(logs, split_name)
-                        wandb.log({split_name: logs})
-                
-                    self.log_stats(valid_logs, 'test')
-                    logging.info(str(valid_logs))
-                    with open(self.output_dir / f'{cur_epoch}/log', 'w') as f:
-                        json.dump(valid_logs, f)
-
-
-                else:
                     # if no validation split is provided, we just save the checkpoint at the end of each epoch.
                     if not self.evaluate_only:
                         self._save_checkpoint(cur_epoch, is_best=False)
@@ -319,7 +237,7 @@ class NewRunner(RunnerBase):
                         
                 test_logs[split_name] = logs
                 logging.info(f'{split_name}: {str(logs)}')
-                wandb.log({split_name: logs})
+                #wandb.log({split_name: logs})
             
             self.log_stats(test_logs, 'test')
             with open(self.output_dir / 'test', 'w') as f:
@@ -362,6 +280,8 @@ class DescentToDelete(NewRunner):
 
         # if os.path.exists()
         train_size = len(self.dataloaders['train']._dataloader.dataset)
+        train_size = 400000000 # hardcoded for SALMU
+        print("DTD train_size", train_size)
 
         cur_epoch = 1
         sigma = self.compute_sigma(
@@ -375,8 +295,8 @@ class DescentToDelete(NewRunner):
         
         self.publish(self.model, sigma)
 
-        # self._save_checkpoint(cur_epoch, is_best=False)
-        self.evaluate(cur_epoch=0, skip_reload=True)
+        self._save_checkpoint(cur_epoch, is_best=False)
+        #self.evaluate(cur_epoch=0, skip_reload=True)
 
 
 class MultimodalUnlearn(NewRunner):
@@ -430,7 +350,7 @@ class MultimodalUnlearn(NewRunner):
         if self.config.run_cfg.unlearn_method != 'dtd':
             skip_reload = True
 
-        self._load_checkpoint(f'output/unlearn-vlul-md-multi-image-F/albef/retrieval_flickr30k/5000/checkpoint_2.pth')
+        #self._load_checkpoint(f'output/unlearn-vlul-md-multi-image-F/albef/retrieval_flickr30k/5000/checkpoint_2.pth')
         if True:#os.path.exists(os.path.join(self.output_dir, 'checkpoint_best.pth')):
             for cur_epoch in range(self.max_epoch):#, desc='Epoch'):
                 logging.info("Start training")
@@ -446,6 +366,7 @@ class MultimodalUnlearn(NewRunner):
                     # convert to iterator if not already
                     self.train_loader = iter(self.train_loader)
                 if not hasattr(self.dataloaders['dr_train'], "__next__"):
+                    self.dataloaders['dr_train_raw'] = self.dataloaders['dr_train']
                     # convert to iterator if not already
                     self.dataloaders['dr_train'] = iter(self.dataloaders['dr_train'])
 
@@ -485,7 +406,11 @@ class MultimodalUnlearn(NewRunner):
                     )
 
 
-                    samples_dr = next(self.dataloaders['dr_train'])
+                    try:
+                        samples_dr = next(self.dataloaders['dr_train'])
+                    except StopIteration:
+                        self.dataloaders['dr_train'] = iter(self.dataloaders['dr_train_raw'])
+                        samples_dr = next(self.dataloaders['dr_train'])
                     samples_dr = prepare_sample(samples_dr, cuda_enabled=self.cuda_enabled)
                     samples_dr.update(
                         {
@@ -499,7 +424,7 @@ class MultimodalUnlearn(NewRunner):
                     self.lr_scheduler.step(cur_epoch=inner_epoch, cur_step=i)
 
                     with torch.cuda.amp.autocast(enabled=use_amp):
-                        out = self.task.train_step(args, cfg, model_ori, self.model, samples_df, samples_dr)
+                      out = self.task.train_step(args, cfg, model_ori, self.model, samples_df, samples_dr)
 
                     loss = out['train_loss']
                     loss_md = out['train_loss_md']
@@ -530,91 +455,13 @@ class MultimodalUnlearn(NewRunner):
                 }
                 self.log_stats(split_name="train", stats=train_stats)
 
-                # evaluation phase
-                # FT and NegGrad only trains for 1 epoch. Skip valid.
-                if len(self.valid_splits) > 0 and cur_epoch > 1: 
-                    valid_log = {}
+                # if no validation split is provided, we just save the checkpoint at the end of each epoch.
+                if not self.evaluate_only:
                     self._save_checkpoint(cur_epoch, is_best=False)
-                    for split_name in self.valid_splits:
-                        logging.info("Evaluating on {}.".format(split_name))
-
-                        logs = self.eval_epoch(
-                            split_name=split_name, cur_epoch=cur_epoch
-                        )
-
-                        if split_name == 'test':
-                            valid_log['dt'] = logs['acc']
-
-                        if split_name == 'df':
-                            if 'txt_r_mean' in logs:
-                                image_embed_dr = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'image_embed_dr.pt'))
-                                text_embed_dr = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'text_embed_dr.pt'))
-                                image_embed_df = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'image_embed_df.pt'))
-                                text_embed_df = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'text_embed_df.pt'))
-                                dr_pred = (image_embed_dr @ text_embed_dr.t()).diagonal()
-                                df_pred = (image_embed_df @ text_embed_df.t()).diagonal()
-
-                                aucs = []
-                                for i in range(5):
-                                    s = i * df_pred.shape[0]
-                                    e = s + df_pred.shape[0]
-
-                                    y = [0] * df_pred.shape[0] + [1] * dr_pred[s:e].shape[0]
-                                    p = torch.hstack([df_pred, dr_pred[s:e]]).flatten().sigmoid().numpy()
-
-                                    a = roc_auc_score(y, p)
-                                    aucs.append(a)
-
-                            else:
-                                dr_pred = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'pred_dr.pt'))
-                                df_pred = torch.load(os.path.join(registry.get_path("output_dir"), str(cur_epoch), 'pred_df.pt'))
-
-                                aucs = []
-                                for i in range(5):
-                                    s = i * df_pred.shape[0]
-                                    e = s + df_pred.shape[0]
-
-                                    y = [0] * df_pred.shape[0] + [1] * dr_pred[s:e].shape[0]
-                                    p = F.softmax(torch.vstack([df_pred, dr_pred[s:e]]), dim=1).numpy()
-
-                                    if p.shape[1] == 2:
-                                        a = roc_auc_score(y, p[:, 1])
-                                        aucs.append(a)
-                                    elif p.shape[1] == 3:
-                                        a = roc_auc_score(y, p[:, 0])
-                                        aucs.append(a)
-                                        a = roc_auc_score(y, p[:, 1])
-                                        aucs.append(a)
-                                        a = roc_auc_score(y, p[:, 2])
-                                        aucs.append(a)
-
-                            print('aaaaaaaaaaaaaaaaa', split_name, aucs)
-                            valid_log['auc'] = np.mean(aucs)
-
                     if is_main_process():
-                        if (valid_log['dt'] + valid_log['auc']) / 2 > best_acc:
-                            best_epoch, best_acc = cur_epoch, (valid_log['dt'] + valid_log['auc']) / 2
-
-                            self._save_checkpoint(cur_epoch, is_best=True)
-                            valid_log.update({"best_epoch": best_epoch})
-
-                            file1 = str(cur_epoch)
-                            file2 = os.path.join(self.output_dir, 'best_epoch')
-                            os.system(f'ln -sfT {file1} {file2}')
-
-                        self.log_stats(valid_log, split_name)
-                        logging.info(valid_log)
-
-
-
-                else:
-                    # if no validation split is provided, we just save the checkpoint at the end of each epoch.
-                    if not self.evaluate_only:
-                        self._save_checkpoint(cur_epoch, is_best=False)
-                        if is_main_process():
-                            file1 = f'checkpoint_{cur_epoch}.pth'
-                            file2 = os.path.join(self.output_dir, 'checkpoint_best.pth')
-                            os.system(f'ln -sfT {file1} {file2}')
+                        file1 = f'checkpoint_{cur_epoch}.pth'
+                        file2 = os.path.join(self.output_dir, 'checkpoint_best.pth')
+                        os.system(f'ln -sfT {file1} {file2}')
 
                 if self.evaluate_only:
                     break
