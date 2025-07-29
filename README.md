@@ -16,7 +16,13 @@ We propose *MultiDelete*, the first machine unlearning method that targets unlea
     <img src="images/fig1.png" width="1000" align="center">
 </p>
 
+## Installation
 
+
+```bash
+conda env create -n multidelete -f environment.yml
+conda activate multidelete
+```
 
 ## How to run
 

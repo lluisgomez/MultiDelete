@@ -1,0 +1,31 @@
+name: lavis-clip
+channels:
+  - defaults
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      - torch==2.1.2+cu118
+      - torchvision==0.16.2+cu118
+      - torchaudio==2.1.2+cu118
+      - --extra-index-url https://download.pytorch.org/whl/cu118
+      - importlib_metadata
+      - omegaconf
+      - pandas
+      - numpy<2
+      - iopath
+      - timm==0.6.13
+      - decord
+      - webdataset
+      - opencv-python-headless
+      - transformers==4.30.2
+      - fairscale==0.4.13
+      - einops
+      - spacy
+      - pycocoevalcap
+      - sentencepiece
+      - wandb
+      - open_clip_torch
+
