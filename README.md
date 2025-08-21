@@ -1,3 +1,15 @@
+We modified the original MultiDelete repository to implement CLIP evals on the SALMU becnchmark.
+
+```CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.run --master_port 29517 --nproc_per_node=1 unlearn.py --unlearn_method vlul --backbone clip --task salmu_retrieval --df_size 30468 --cfg-path configs/clip/retrieval_salmu.yaml```
+
+We also added two other unlearning methods:
+
+```CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.run --master_port 29517 --nproc_per_node=1 unlearn.py --unlearn_method erase --backbone clip --task salmu_retrieval --df_size 30468 --cfg-path configs/clip/retrieval_salmu.yaml```
+
+```CUDA_VISIBLE_DEVICES=2 python -m torch.distributed.run --master_port 29517 --nproc_per_node=1 unlearn.py --unlearn_method delete --backbone clip --task salmu_retrieval --df_size 30468 --cfg-path configs/clip/retrieval_salmu.yaml```
+
+
+
 
 # MultiDelete for Multimodal Machine Unlearning
 
